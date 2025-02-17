@@ -13,7 +13,9 @@ export default async function handler(req, res) {
 
     if (!currency || price === undefined || price === null) {
       console.error("❌ Currency atau harga tidak valid!", req.body);
-      return res.status(400).json({ message: "Currency atau harga tidak valid!" });
+      return res
+        .status(400)
+        .json({ message: "Currency atau harga tidak valid!" });
     }
 
     const numericPrice = parseInt(price, 10);
@@ -22,35 +24,44 @@ export default async function handler(req, res) {
       return res.status(400).json({ message: "Harga bukan angka yang valid!" });
     }
 
-    const serverKey = "SB-Mid-server-5e3oqR_Wv_kaItQXnrqvsOCD";
+    const serverKey = "SB-Mid-server-5e3oqR_Wv_kaItQXnrqvsOCD"; // Use environment variables for security
     const orderId = "TX-" + Date.now();
 
-    const response = await fetch("https://app.sandbox.midtrans.com/snap/v1/transactions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Basic " + Buffer.from(serverKey + ":").toString("base64"),
-      },
-      body: JSON.stringify({
-        transaction_details: {
-          order_id: orderId,
-          gross_amount: numericPrice,
+    const response = await fetch(
+      "https://app.sandbox.midtrans.com/snap/v1/transactions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization:
+            "Basic " + Buffer.from(serverKey + ":").toString("base64"),
         },
-      }),
-    });
+        body: JSON.stringify({
+          transaction_details: {
+            order_id: orderId,
+            gross_amount: numericPrice,
+          },
+        }),
+      }
+    );
 
     const data = await response.json();
-    console.log("📌 Response dari Midtrans:", data);
+    console.log("📌 Response from Midtrans:", data);
 
     if (!response.ok) {
       return res.status(response.status).json({ message: data });
     }
 
-    if (!data.redirect_url) {
-      return res.status(400).json({ message: "Payment URL tidak ditemukan dalam response Midtrans!" });
+    // MODIFIED: Return the Snap token instead of the redirect URL
+    if (!data.token) {
+      return res
+        .status(400)
+        .json({
+          message: "Snap token tidak ditemukan dalam response Midtrans!",
+        });
     }
 
-    res.status(200).json({ order_id: orderId, paymentUrl: data.redirect_url });
+    res.status(200).json({ order_id: orderId, snapToken: data.token }); // MODIFIED: Return snapToken
   } catch (error) {
     console.error("❌ Error di createTransaction:", error);
     res.status(500).json({ message: "Server error", error: error.message });

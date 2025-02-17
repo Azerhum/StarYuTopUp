@@ -1,6 +1,6 @@
 import { useRouter } from "next/router";
 import { useState, useEffect } from "react";
-import { QRCodeCanvas } from "qrcode.react";
+import Link from "next/link"; // ADDED: Import Link
 
 export default function GameDetail() {
   const router = useRouter();
@@ -9,16 +9,18 @@ export default function GameDetail() {
 
   // State variables
   const [selectedCurrency, setSelectedCurrency] = useState(null);
-  const [showQR, setShowQR] = useState(false);
   const [userId, setUserId] = useState("");
   const [server, setServer] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
-  const [qrValue, setQrValue] = useState(""); // Add qrValue state
+  const [orderId, setOrderId] = useState(""); // ADDED: State for order ID
+  const [snapToken, setSnapToken] = useState(""); // ADDED: State for snapToken
+
+  const [isPaymentProcessing, setIsPaymentProcessing] = useState(false); // ADDED : Processing state
 
   useEffect(() => {
-    // Reset QR code when component mounts or changes
-    setQrValue("");
-    setShowQR(false);
+    // Reset states when component mounts or changes
+    setSnapToken("");
+    setOrderId("");
   }, [id]); // id is the router query parameter so whenever it changes, this effect runs.
 
   // Handlers for input changes
@@ -39,14 +41,15 @@ export default function GameDetail() {
   };
 
   const handleCheckPayment = async () => {
-    if (!transactionId) {
+    if (!orderId) {
+      // MODIFIED: Use orderId
       alert("Transaction ID tidak ditemukan!");
       return;
     }
 
     try {
       const response = await fetch(
-        `/api/checkPayment?transactionId=${transactionId}`
+        `/api/checkPayment?transactionId=${orderId}` // MODIFIED: Use orderId
       );
       const data = await response.json();
 
@@ -64,37 +67,50 @@ export default function GameDetail() {
 
   const handleBuyNow = async () => {
     if (!selectedCurrency || !selectedCurrency.price) {
-        alert("Pilih currency terlebih dahulu!");
-        return;
+      alert("Pilih currency terlebih dahulu!");
+      return;
     }
 
     const payload = {
-        currency: selectedCurrency.name, 
-        price: selectedCurrency.price
+      currency: selectedCurrency.name,
+      price: selectedCurrency.price,
     };
 
     console.log("Data dikirim ke API:", payload);
+    setIsPaymentProcessing(true); // ADDED : Set processing to true
 
     try {
-        const response = await fetch("/api/createTransaction", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        });
+      const response = await fetch("/api/createTransaction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-        const data = await response.json();
-        console.log("Response dari API:", data);
+      const data = await response.json();
+      console.log("Response dari API:", data);
 
-        if (response.ok) {
-            alert("Transaksi berhasil dibuat!");
-        } else {
-            alert(`Gagal: ${data.message}`);
-        }
+      if (response.ok) {
+        alert("Transaksi berhasil dibuat!");
+        setOrderId(data.order_id); // ADDED: Store the order ID
+        setSnapToken(data.snapToken); // ADDED: Store the snapToken
+        setIsPaymentProcessing(false); // ADDED : Set processing to false
+        //router.push(`/qr?transactionId=${data.order_id}&qrValue=${encodeURIComponent(data.snapToken)}`); // ADDED: Redirect to QR page
+
+        // MODIFIED: Redirect to QR page
+        router.push(
+          `/qr?transactionId=${data.order_id}&qrValue=${encodeURIComponent(
+            data.snapToken
+          )}`
+        );
+      } else {
+        alert(`Gagal: ${data.message}`);
+        setIsPaymentProcessing(false); // ADDED : Set processing to false
+      }
     } catch (error) {
-        console.error("Gagal membuat transaksi:", error);
+      console.error("Gagal membuat transaksi:", error);
+      setIsPaymentProcessing(false); // ADDED : Set processing to false
     }
-};
-
+  };
 
   if (!game) return <p className="text-center mt-5">Game tidak ditemukan!</p>;
 
@@ -197,22 +213,23 @@ export default function GameDetail() {
 
       {/* Buy Now Button */}
       <div className="mt-5 text-center">
+        {/* MODIFIED: Conditionally render either the "Buy Now" button or the QR code link */}
+        {/* {snapToken ? (
+                    <Link href={`/qr?transactionId=${orderId}&qrValue=${encodeURIComponent(snapToken)}`} legacyBehavior>
+                        <a className="bg-green-500 text-white px-4 py-2 rounded-md mt-2 inline-block">
+                            Lihat QR Code
+                        </a>
+                    </Link>
+                ) : ( */}
         <button
           className="bg-blue-500 text-white px-4 py-2 rounded-md mt-2"
-          onClick={() => {
-            console.log("✅ Tombol 'Beli Sekarang' diklik!", selectedCurrency);
-            handleBuyNow(selectedCurrency);
-          }}
+          onClick={handleBuyNow}
+          disabled={isPaymentProcessing}
         >
-          Beli Sekarang
+          {isPaymentProcessing ? "Memproses Pembayaran..." : "Beli Sekarang"}
         </button>
+        {/* )} */}
       </div>
-      {showQR && qrValue && (
-        <div className="mt-5 text-center">
-          <h2>Scan QR untuk Membayar</h2>
-          <QRCodeCanvas value={qrValue} size={256} level={"H"} />
-        </div>
-      )}
     </div>
   );
 }

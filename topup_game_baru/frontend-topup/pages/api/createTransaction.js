@@ -1,69 +1,55 @@
+import axios from "axios";
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ message: "Method Not Allowed" });
+    return res
+      .status(405)
+      .json({ error: "Method tidak diizinkan (hanya POST)" });
+  }
+
+  const { transactionId, paymentStatus } = req.body;
+
+  if (!transactionId || !paymentStatus) {
+    console.error("❌ Data tidak lengkap:", req.body); // TAMBAHKAN: Log data yang diterima
+    return res
+      .status(400)
+      .json({ error: "transactionId dan paymentStatus wajib diisi" });
+  }
+
+  const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
+
+  if (!discordWebhookUrl) {
+    console.error("❌ DISCORD_WEBHOOK_URL tidak ditemukan di environment!");
+    return res.status(500).json({ error: "DISCORD_WEBHOOK_URL belum diatur" });
   }
 
   try {
-    console.log("📥 Request body diterima:", req.body);
+    let message = `🔔 Notifikasi Pembayaran: Transaksi ID ${transactionId} - Status: ${paymentStatus}`;
 
-    const { currency, price } = req.body;
-
-    console.log("📌 Type of currency:", typeof currency);
-    console.log("📌 Type of price:", typeof price);
-
-    if (!currency || price === undefined || price === null) {
-      console.error("❌ Currency atau harga tidak valid!", req.body);
-      return res
-        .status(400)
-        .json({ message: "Currency atau harga tidak valid!" });
+    if (paymentStatus === "settlement") {
+      message = `✅ Pembayaran Berhasil! Transaksi ID: ${transactionId}`;
+    } else if (paymentStatus === "pending") {
+      message = `🟡 Pembayaran Pending! Transaksi ID: ${transactionId}`;
+    } else {
+      message = `❌ Pembayaran Gagal! Transaksi ID: ${paymentStatus}`; //Fixed TyPo
     }
 
-    const numericPrice = parseInt(price, 10);
-    if (isNaN(numericPrice)) {
-      console.error("❌ Harga bukan angka yang valid!", price);
-      return res.status(400).json({ message: "Harga bukan angka yang valid!" });
-    }
+    console.log(`📢 Mengirim pesan ke Discord: ${message}`);
+    const response = await axios.post(discordWebhookUrl, { content: message });
 
-    const serverKey = "SB-Mid-server-5e3oqR_Wv_kaItQXnrqvsOCD"; // Use environment variables for security
-    const orderId = "TX-" + Date.now();
+    console.log("✅ Notifikasi Discord berhasil dikirim!", response.data);
 
-    const response = await fetch(
-      "https://app.sandbox.midtrans.com/snap/v1/transactions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization:
-            "Basic " + Buffer.from(serverKey + ":").toString("base64"),
-        },
-        body: JSON.stringify({
-          transaction_details: {
-            order_id: orderId,
-            gross_amount: numericPrice,
-          },
-        }),
-      }
-    );
-
-    const data = await response.json();
-    console.log("📌 Response from Midtrans:", data);
-
-    if (!response.ok) {
-      return res.status(response.status).json({ message: data });
-    }
-
-    // MODIFIED: Return the Snap token instead of the redirect URL
-    if (!data.token) {
-      return res
-        .status(400)
-        .json({
-          message: "Snap token tidak ditemukan dalam response Midtrans!",
-        });
-    }
-
-    res.status(200).json({ order_id: orderId, snapToken: data.token }); // MODIFIED: Return snapToken
+    return res
+      .status(200)
+      .json({ success: true, message: "Notifikasi Discord berhasil dikirim" });
   } catch (error) {
-    console.error("❌ Error di createTransaction:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    console.error("❌ Gagal mengirim notifikasi ke Discord:", error);
+    console.error(
+      "❌ Error details:",
+      error.response ? error.response.data : error.message
+    ); // Tambahkan ini
+    return res
+      .status(500)
+      .json({ error: "Gagal mengirim notifikasi ke Discord" });
   }
 }
